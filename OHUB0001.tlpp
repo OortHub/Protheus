@@ -1,0 +1,319 @@
+#Include "protheus.ch"
+#Include 'tlpp-object.th'
+#Include 'tlpp-core.th'
+
+/*/{Protheus.doc} OHUB0001
+Função Responsável por criar o cliente e o pedido no Protheus a partir do pedido recebido do OortHub.
+@type  Function
+@author Lucas Fidélis
+@since 01/04/2025
+/*/
+User Function OHUB0001(oNoti)
+	Local nCustomer := 0
+	Local cCustomerCGC, cCustomerZipCode
+	Local oData, oOort
+	Local nRecOrder := -1
+	Local cApiHost := 'https://api.oorthub.com.br'
+	Local cXAuth := AllTrim(SuperGetMV('MV_OORTKEY'))
+	oOort := OortHubClient():New(cApiHost, cXAuth)
+
+	oData := oOort:GetOrder(oNoti['id'])
+
+	//Filtrando data de integração
+	If oData['salesChannelCreatedAt'] < '2025-04-22T12:00:00.000Z'
+		Return -2
+	EndIf
+
+	cCustomerZipCode := oData['shippingInfo']['address']['zipcode']
+	cCustomerCGC := oData['billingInfo']['document']
+
+	nCustomer := SeekCustomer(cCustomerCGC, cCustomerZipCode)
+	If nCustomer <= 0
+		nCustomer := CreateCustomer(oData)
+	EndIf
+
+	DbSelectArea('SA1')
+	SA1->(DbGoTo(nCustomer))
+
+	nRecOrder := SeekOrder(oData['id'])
+	If nRecOrder < 0
+		If CreateOrder(oData)
+			nRecOrder := SC5->(Recno())
+		EndIf
+	EndIf
+
+	SA1->(DbCloseArea())
+
+	If nRecOrder > 0
+		DbSelectArea('SC5')
+		SC5->(DbGoTo(nRecOrder))
+		oOort:SetExternalId(oData['id'], SC5->C5_FILIAL + SC5->C5_NUM)
+		SC5->(DbCloseArea())
+	EndIf
+
+Return nRecOrder
+
+/*/{Protheus.doc} CreateCustomer
+Função Responsável por criar o cliente no Protheus a partir do pedido recebido do OortHub.
+@type  Function
+@author Lucas Fidélis
+@since 01/04/2025
+/*/
+Static Function CreateCustomer(oData)
+	Local nRecno := 0
+	Local nOpcAuto := 3
+	Local n
+	Local varError := ErrorClass():New()
+
+	Local cDocument := oData['billingInfo']['document']
+	Local cNome := oData['shippingInfo']['firstName'] + ' ' + oData['shippingInfo']['lastName']
+	Local cAddress := oData['shippingInfo']['address']['streetName'] + ', ' + oData['shippingInfo']['address']['streetNumber']
+	Local cUF := GetUf(oData['shippingInfo']['address']['state'])
+	Local cVend := '000171' // Alterar para o vendedor esperado
+	Local cPessoa := IIF(Len(cDocument) == 11, 'F', 'J')
+	Local cEmail := 'vendas@meudominio.com.br' // Alterar para o email esperado
+	Local cZipCode := oData['shippingInfo']['address']['zipcode']
+	Local cCodMun := GetCodMunByZipCode(cZipCode)
+	Private lMsErroAuto := .F.
+	Private lMsHelpAuto := .T.
+	Private lAutoErrNoFile := .T.
+
+	aSA1Auto := {;
+		{'A1_FILIAL', xFilial('SA1')},;
+		{'A1_LOJA', '01'},;
+		{'A1_CEP', cZipCode},;
+		{'A1_NOME', cNome},;
+		{'A1_NREDUZ', cNome},;
+		{'A1_PESSOA', cPessoa},;
+		{'A1_CGC', cDocument},;
+		{'A1_INSCR', 'ISENTO'},;
+		{'A1_PAIS', '105'},;
+		{'A1_CODPAIS', '01058'},;
+		{'A1_CONTRIB', '2'},;
+		{'A1_END', cAddress},;
+		{'A1_TIPO', 'F'},;
+		{'A1_EST', cUF},;
+		{'A1_COD_MUN', cCodMun},;
+		{'A1_BAIRRO', oData['shippingInfo']['address']['neighborhood']},;
+		{'A1_CONTATO', cNome},;
+		{'A1_VEND', cVend},;
+		{'A1_REGIAO', '100'},; // Alterar
+	{'A1_RISCO', 'B'},; // Alterar
+	{'A1_EMAIL', cEmail},;
+		{'A1_DTNASC', Date()};
+		}
+
+	MSExecAuto({|a,b| CRMA980(a,b)}, aSA1Auto, nOpcAuto)
+
+	If lMsErroAuto
+		aLogAuto := GetAutoGRLog()
+		cErrorMsg := ''
+		For n := 1 To Len(aLogAuto)
+			cErrorMsg += aLogAuto[n] + '\n'
+		Next
+		varError:description := cErrorMsg
+		Throw varError
+	Else
+		nRecno := SA1->(Recno())
+	EndIf
+Return nRecno
+
+/*/{Protheus.doc} SeekCustomer
+Função Responsável por buscar o cliente no Protheus a partir do documento e cep.
+Se o cliente não for encontrado, retorna 0, senão, retorna o recno da SA1.
+@type  Function
+@author Lucas Fidélis
+@since 01/04/2025
+/*/
+Static Function SeekCustomer(cCGC, cZipCode)
+	Local cFilter
+	Local nRecno := 0
+
+	DbSelectArea('SA1')
+	cFilter := "A1_CGC = '"+cCGC+"'"
+	If !Empty(cZipCode)
+		cFilter += " .AND. A1_CEP = '"+cZipCode+"'"
+	EndIf
+	cFilter += " .AND. A1_FILIAL = '"+cFilAnt+"'"
+	SA1->(dbSetFilter( {|| &cFilter }, cFilter ))
+	SA1->(dbGoTop())
+
+	If !SA1->(EoF())
+		nRecno := SA1->(RECNO())
+	EndIf
+	SA1->(DbCloseArea())
+Return nRecno
+
+/*/{Protheus.doc} GetCodMunByZipCode
+Função responsável por buscar o código do município a partir do CEP.
+@type  Function
+@author Lucas Fidélis
+@since 01/04/2025
+/*/
+Static Function GetCodMunByZipCode(cZipCode)
+
+	Local cUrl := "https://viacep.com.br/ws/" + AllTrim(cZipCode) + "/json/"
+	Local cContent
+	Local oBody := JsonObject():New()
+	Local cCodMun := Nil
+	Local cHttpStatus, nStatus
+
+	cContent := Httpget(cUrl)
+	nStatus := HttpGetStatus(@cHttpStatus)
+
+	If nStatus != 200
+		cUrl := "https://opencep.com/v1/" + AllTrim(cZipCode)
+		cContent := Httpget(cUrl)
+	EndIf
+
+	oBody:fromJson(cContent)
+	cCodMun := SubStr(oBody['ibge'], 3)
+
+Return cCodMun
+
+/*/{Protheus.doc} CreateOrder
+Função Responsável por criar o pedido no Protheus a partir do pedido recebido do OortHub.
+@type  Function
+@author Lucas Fidélis
+@since 01/04/2025
+/*/
+Static Function CreateOrder(oData)
+	Local n, oItem, cTes
+	Local aItems := {}
+	Local aHeader := {}
+	Local nTax := 0
+	Local varError := ErrorClass():New()
+
+	Local nOption := 3
+	Private lMsErroAuto := .F.
+	Private lMsHelpAuto := .T.
+	Private lAutoErrNoFile := .T.
+
+	For n:=1 To Len(oData['items'])
+		oItem := oData['items'][n]
+		If (!SKUExists(oItem['sku']))
+			Return .F.
+		EndIf
+		cTes := '521' // Alterar para a TES esperada ou TES Inteligente
+		AAdd(aItems, {;
+			{'C6_FILIAL', xFilial('SC6'), Nil },;
+			{'C6_ITEM', StrZero(n, 2), Nil },;
+			{'C6_PRODUTO', oItem['sku'], Nil },;
+			{'C6_QTDVEN', oItem['quantity'], Nil },;
+			{'C6_PRCVEN', oItem['basePrice'], Nil },;
+			{'C6_VALOR', oItem['quantity'] * oItem['basePrice'], Nil },;
+			{'C6_TES', cTes, Nil },;
+			{'C6_LOCAL', '01', Nil }; // Alterar para o local esperado
+		})
+		nTax += oItem['quantity'] * oItem['tax']
+	Next
+
+	nTax += IIF(ValType(oData['shipment']) == 'J', oData['shipment']['costs']['baseCost'], 0)
+
+	aHeader := {;
+		{'C5_FILIAL', xFilial('SC5'), Nil },;
+		{'C5_TIPO', 'N', Nil },;
+		{'C5_CLIENTE', SA1->A1_COD, Nil },;
+		{'C5_CLIENT', SA1->A1_COD, Nil },;
+		{'C5_LOJACLI', SA1->A1_LOJA, Nil },;
+		{'C5_LOJAENT', SA1->A1_LOJA, Nil },;
+		{'C5_CONDPAG', '004', Nil },; // Alterar
+	{'C5_MENNOTA', 'Pedido OortHub', Nil },; // Alterar
+	{'C5_LIBEROK', 'S', Nil },;
+		{'C5_INDPRES', '2', Nil },; // Alterar se houver necessidade
+	{'C5_CODA1U', '000003', Nil },; // Alterar para o código do intermediador
+	// {'C5_XDESPML', nTax, Nil },; Inserir esse campo se o cliente pussuir a necessidade de taxas no pedido de venda
+	{'C5_OORTID',  oData['id'], Nil };
+		}
+
+	MSExecAuto({|x,y,z|Mata410(x,y,z)}, aHeader, aItems, nOption)
+
+	If lMsErroAuto
+		aLogAuto := GetAutoGRLog()
+		cErrorMsg := ''
+		For n := 1 To Len(aLogAuto)
+			cErrorMsg += aLogAuto[n] + '\n'
+		Next
+		varError:description := cErrorMsg
+		Throw varError
+	EndIf
+
+Return .T.
+
+/*/{Protheus.doc} SKUExists
+Função Responsável por verificar se o SKU existe no Protheus.
+@type  Function
+@author Lucas Fidélis
+@since 01/04/2025
+/*/
+Static Function SKUExists(cSKU)
+
+	Local lExists := .F.
+
+	DbSelectArea('SB1')
+	If SB1->(DbSeek(xFilial('SB1') + cSKU))
+		lExists := .T.
+	EndIf
+	SB1->(DbCloseArea())
+
+Return lExists
+
+/*/{Protheus.doc} SeekOrder
+Função responsável por buscar o pedido no Protheus a partir do ID do pedido recebido do OortHub.
+Se o pedido não for encontrado, retorna -1, senão, retorna o recno da SC5.
+@type  Function
+@author Lucas Fidélis
+@since 01/04/2025
+/*/
+Static Function SeekOrder(cOortID)
+
+	Local cFilter
+	Local nRecno := -1
+
+	DbSelectArea('SC5')
+	cFilter := "C5_OORTID = '"+cOortID+"'"
+	SC5->(dbSetFilter( {|| &cFilter }, cFilter ))
+	SC5->(dbGoTop())
+	If !SC5->(EoF())
+		nRecno := SC5->(RECNO())
+	EndIf
+	SC5->(DbCloseArea())
+
+Return nRecno
+
+/*/{Protheus.doc} GetUf
+Função responsável por retornar a sigla do estado a partir do nome do estado.
+@type  Function
+@author Lucas Fidélis
+@since 01/04/2025
+/*/
+Static Function GetUf(cState)
+	Local oStates := JsonObject():New()
+	oStates['Acre'] := 'AC'
+	oStates['Alagoas'] := 'AL'
+	oStates['Amapá'] := 'AP'
+	oStates['Amazonas'] := 'AM'
+	oStates['Bahia'] := 'BA'
+	oStates['Ceará'] := 'CE'
+	oStates['Distrito Federal'] := 'DF'
+	oStates['Espírito Santo'] := 'ES'
+	oStates['Goiás'] := 'GO'
+	oStates['Maranhão'] := 'MA'
+	oStates['Mato Grosso'] := 'MT'
+	oStates['Mato Grosso do Sul'] := 'MS'
+	oStates['Minas Gerais'] := 'MG'
+	oStates['Pará'] := 'PA'
+	oStates['Paraíba'] := 'PB'
+	oStates['Paraná'] := 'PR'
+	oStates['Pernambuco'] := 'PE'
+	oStates['Piauí'] := 'PI'
+	oStates['Rio de Janeiro'] := 'RJ'
+	oStates['Rio Grande do Norte'] := 'RN'
+	oStates['Rio Grande do Sul'] := 'RS'
+	oStates['Rondônia'] := 'RO'
+	oStates['Roraima'] := 'RR'
+	oStates['Santa Catarina'] := 'SC'
+	oStates['São Paulo'] := 'SP'
+	oStates['Sergipe'] := 'SE'
+	oStates['Tocantins'] := 'TO'
+Return oStates[cState]
