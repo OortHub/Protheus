@@ -1,0 +1,129 @@
+#Include 'tlpp-object.th'
+#Include 'tlpp-core.th'
+
+Class OortHubClient
+	Data cBaseUrl as Character
+	Data cToken as Character
+	Public Method New(cBaseUrl, cToken) as Object
+	public Method GetOrder(cId) as Object
+	Public Method SetExternalId(cOrderId, cExternalId) as Object
+	Private Method Post(cPath, cPostData, aHeadOut) as Object
+	Private Method Get(cPath, aHeadOut) as Object
+	Private Method RestPut(cPath, cPostData, aHeadOut) as Object
+
+EndClass
+
+Method New(cBaseUrl, cToken) Class OortHubClient
+	::cBaseUrl := cBaseUrl
+	::cToken := cToken
+Return self
+
+Method GetOrder(cId) Class OortHubClient
+	Local cPath := '/orders/' + cId
+Return ::Get(cPath)
+
+Method SetExternalId(cOrderId, cExternalId) Class OortHubClient
+	Local cPath := '/orders/' + cOrderId + '/external-id'
+	Local oPayload := JsonObject():New()
+	oPayload['externalId'] := cExternalId
+Return ::RestPut(cPath, oPayload:toJson())
+
+Method Post(cPath, cPostData, aHeadOut) Class OortHubClient
+	Default aHeadOut := {}
+	Local oRest, cError, nStatus, cResponse, oResponse
+	Local varError := ErrorClass():New()
+
+	cPostData := StrTran(cPostData, '\\u', '\u')
+	oRest := FWRest():New(::cBaseUrl)
+	oRest:SetPath(cPath)
+	oRest:SetPostParams(cPostData)
+	oRest:SetChkStatus(.F.)
+
+	AAdd(aHeadOut, "Content-Type: application/json; charset=UTF-8")
+	AAdd(aHeadOut, "Accept: application/json")
+	AAdd(aHeadOut, "X-Auth-Token: " + ::cToken)
+
+	If oRest:Post(aHeadOut)
+		cError := ""
+		nStatus := HTTPGetStatus(@cError)
+		cResponse := oRest:getResult()
+		oResponse := JsonObject():New()
+		oResponse:FromJson(cResponse)
+		If nStatus < 200 .Or. nStatus > 299
+			varError:genCode := nStatus
+			varError:description := oResponse['message']
+			Throw varError
+		EndIf
+	Else
+		varError:genCode := -1
+		varError:description := 'Servidor não encontrado: ' + ::cBaseUrl
+		varError:description += '\nEntre em contato com o administrador'
+		Throw varError
+	EndIf
+Return oResponse
+
+Method Get(cPath, aHeadOut) Class OortHubClient
+	Default aHeadOut := {}
+	Local oRest, cError, nStatus, cResponse, oResponse
+	Local varError := ErrorClass():New()
+
+	oRest := FWRest():New(::cBaseUrl)
+	oRest:SetPath(cPath)
+	oRest:SetChkStatus(.F.)
+
+	AAdd(aHeadOut, "Content-Type: application/json; charset=UTF-8")
+	AAdd(aHeadOut, "Accept: application/json")
+	AAdd(aHeadOut, "X-Auth-Token: " + ::cToken)
+
+	If oRest:Get(aHeadOut)
+		cError := ""
+		nStatus := HTTPGetStatus(@cError)
+		cResponse := oRest:getResult()
+		cResponse := DecodeUtf8(cResponse)
+		oResponse := JsonObject():New()
+		oResponse:FromJson(cResponse)
+		If nStatus != 200
+			varError:genCode := nStatus
+			varError:description := oResponse['message']
+			Throw varError
+		EndIf
+	Else
+		varError:genCode := -1
+		varError:description := 'Servidor não encontrado: ' + ::cBaseUrl
+		varError:description += '\nEntre em contato com o administrador'
+		Throw varError
+	EndIf
+Return oResponse
+
+Method RestPut(cPath, cPostData, aHeadOut) Class OortHubClient
+	Default aHeadOut := {}
+	Local oRest, cError, nStatus, cResponse, oResponse
+	Local varError := ErrorClass():New()
+
+	cPostData := StrTran(cPostData, '\\u', '\u')
+	oRest := FWRest():New(::cBaseUrl)
+	oRest:SetPath(cPath)
+	oRest:SetChkStatus(.F.)
+
+	AAdd(aHeadOut, "Content-Type: application/json; charset=UTF-8")
+	AAdd(aHeadOut, "Accept: application/json")
+	AAdd(aHeadOut, "X-Auth-Token: " + ::cToken)
+
+	If oRest:Put(aHeadOut, cPostData)
+		cError := ""
+		nStatus := HTTPGetStatus(@cError)
+		cResponse := oRest:getResult()
+		oResponse := JsonObject():New()
+		oResponse:FromJson(cResponse)
+		If nStatus < 200 .Or. nStatus > 299
+			varError:genCode := nStatus
+			varError:description := oResponse['message']
+			Throw varError
+		EndIf
+	Else
+		varError:genCode := -1
+		varError:description := 'Servidor não encontrado: ' + ::cBaseUrl
+		varError:description += '\nEntre em contato com o administrador'
+		Throw varError
+	EndIf
+Return oResponse
