@@ -1,0 +1,55 @@
+#Include 'Protheus.ch'
+#Include 'tlpp-object.th'
+#Include 'tlpp-core.th'
+
+Class WSRESTFULHelper
+	Data oWSRESTFUL as Object
+
+	Public Method New(oWSRESTFUL as Object) as Object
+	Public Method Ok(cBody as Character)
+	Public Method BadRequest(cMessage as Character)
+	Public Method NotFound(cMessage as Character)
+	Public Method Conflict(oBodyResponse as Json)
+	Public Method ServerError(cErrorDescription as Character)
+EndClass
+
+Method New(oWSRESTFUL as Object) as Object Class WSRESTFULHelper
+	::oWSRESTFUL := oWSRESTFUL
+Return self
+
+Method Ok(cBody as Character) Class WSRESTFULHelper
+	::oWSRESTFUL:SetStatus(200)
+	::oWSRESTFUL:SetContentType("application/json")
+	::oWSRESTFUL:SetResponse(cBody)
+Return .T.
+
+Method BadRequest(cMessage as Character) Class WSRESTFULHelper
+	Local oResponse := JsonObject():New()
+	oResponse['message'] := cMessage
+	::oWSRESTFUL:SetStatus(400)
+	::oWSRESTFUL:SetContentType("application/json")
+	::oWSRESTFUL:SetResponse(oResponse:toJson())
+Return .T.
+
+Method NotFound(cMessage as Character) Class WSRESTFULHelper
+	Local oResponse := JsonObject():New()
+	oResponse['message'] := cMessage
+	::oWSRESTFUL:SetStatus(404)
+	::oWSRESTFUL:SetContentType("application/json")
+	::oWSRESTFUL:SetResponse(oResponse:toJson())
+Return .T.
+
+Method Conflict(oBodyResponse as Json) Class WSRESTFULHelper
+	::oWSRESTFUL:SetStatus(409)
+	::oWSRESTFUL:SetContentType("application/json")
+	::oWSRESTFUL:SetResponse(oBodyResponse:toJson())
+Return .T.
+
+Method ServerError(error as Object) Class WSRESTFULHelper
+	Local oResponse := JsonObject():New()
+	oResponse['message'] := error:Description
+	oResponse['stack'] := error:ErrorStack
+	::oWSRESTFUL:SetStatus(500)
+	::oWSRESTFUL:SetContentType("application/json")
+	::oWSRESTFUL:SetResponse(oResponse:toJson())
+Return .T.
