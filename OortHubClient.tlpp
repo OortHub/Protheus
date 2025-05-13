@@ -7,10 +7,10 @@ Class OortHubClient
 	Public Method New(cBaseUrl, cToken) as Object
 	public Method GetOrder(cId) as Object
 	Public Method SetExternalId(cOrderId, cExternalId) as Object
+	Public Method InvoiceOrder(cOrderId, cXML) as Object
 	Private Method Post(cPath, cPostData, aHeadOut) as Object
 	Private Method Get(cPath, aHeadOut) as Object
 	Private Method RestPut(cPath, cPostData, aHeadOut) as Object
-
 EndClass
 
 Method New(cBaseUrl, cToken) Class OortHubClient
@@ -28,6 +28,12 @@ Method SetExternalId(cOrderId, cExternalId) Class OortHubClient
 	oPayload['externalId'] := cExternalId
 Return ::RestPut(cPath, oPayload:toJson())
 
+Method InvoiceOrder(cOrderId, cXML) Class OortHubClient
+	Local cPath := '/orders/' + cOrderId + '/invoice'
+	Local aHeadOut := {}
+	AAdd(aHeadOut, "Content-Type: application/xml; charset=UTF-8")
+Return ::Post(cPath, cXML, aHeadOut)
+
 Method Post(cPath, cPostData, aHeadOut) Class OortHubClient
 	Default aHeadOut := {}
 	Local oRest, cError, nStatus, cResponse, oResponse
@@ -39,7 +45,6 @@ Method Post(cPath, cPostData, aHeadOut) Class OortHubClient
 	oRest:SetPostParams(cPostData)
 	oRest:SetChkStatus(.F.)
 
-	AAdd(aHeadOut, "Content-Type: application/json; charset=UTF-8")
 	AAdd(aHeadOut, "Accept: application/json")
 	AAdd(aHeadOut, "X-Auth-Token: " + ::cToken)
 
