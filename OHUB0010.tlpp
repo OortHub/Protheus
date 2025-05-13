@@ -1,0 +1,155 @@
+#Include "protheus.ch"
+#Include 'tlpp-object.th'
+#Include 'tlpp-core.th'
+
+/*/{Protheus.doc} OHUB0010
+Função Responsável por enviar o xml da nota fiscal para o OortHub a partir do pedido recebido do Protheus.
+@type  Function
+@author Lucas Fidélis
+@since 01/04/2025
+/*/
+User Function OHUB0010(cNota, cSerie, cChaveNfe, cIdEnt, cClientFor, cLoja)
+	Local nOrder := -1
+	Local cOortID := Nil
+	Local cXML
+	Local cApiHost := 'https://api.oorthub.com.br'
+	Local cXAuth := AllTrim(SuperGetMV('MV_OORTKEY'))
+	Local oOort := OortHubClient():New(cApiHost, cXAuth)
+
+	nOrder := FindOrder(cClientFor, cLoja, cNota, cSerie)
+	If nOrder <= 0
+		Return Nil
+	EndIf
+
+	DbSelectArea('SC5')
+	SC5->(DbGoTo(nOrder))
+	cOortID := AllTrim(SC5->C5_OORTID)
+	SC5->(DbCloseArea())
+
+	If Empty(cOortID) .Or. Len(cOortID) <= 0
+		Return Nil
+	EndIf
+
+	cXML := zSpedXML(cNota, cSerie, .T.)
+
+	If Empty(cXML)
+		FWAlertWarning("Erro ao gerar o XML da nota fiscal.", "NF-e OortHub")
+		Return Nil
+	EndIf
+
+	Try
+		oOort:InvoiceOrder(cOortID, cXML)
+		FWAlertSuccess("NF-e enviada com sucesso para o pedido: "+ cOortId, "NF-e OortHub")
+	Catch oError
+		FWAlertError(oError:description, "NF-e OortHub")
+	EndTry
+Return Nil
+
+Static Function FindOrder(cClieFor, cLoja, cNota, cSerie)
+	Local cFilter
+	Local nRecno := -1
+
+	cFilter := "C5_FILIAL = '"+cFilAnt+"'"
+	cFilter += " .AND. C5_CLIENTE = '"+cClieFor+"'"
+	cFilter += " .AND. C5_LOJACLI = '"+cLoja+"'"
+	cFilter += " .AND. C5_NOTA = '"+cNota+"'"
+	cFilter += " .AND. C5_SERIE = '"+cSerie+"'"
+
+	DbSelectArea('SC5')
+	SC5->(dbSetFilter( {|| &cFilter }, cFilter ))
+	SC5->(dbGoTop())
+	If !SC5->(EoF())
+		nRecno := SC5->(RECNO())
+	EndIf
+	SC5->(dbCloseArea())
+Return nRecno
+
+Static Function zSpedXML(cDocumento, cSerie, lMostra)
+	Local aArea        := GetArea()
+	Local cURLTss      := PadR(GetNewPar("MV_SPEDURL","http://"),250)
+	Local oWebServ
+	Local cIdEnt       := RetIdEnti()
+	Local cTextoXML    := ""
+	Local cProt    := ""
+	Default cDocumento := ""
+	Default cSerie     := ""
+	// Default cArqXML    := GetTempPath()+"arquivo_"+cSerie+cDocumento+".xml"
+	Default lMostra    := .F.
+
+	//Se tiver documento
+	If !Empty(cDocumento)
+		cDocumento := PadR(cDocumento, TamSX3('F2_DOC')[1])
+		cSerie     := PadR(cSerie,     TamSX3('F2_SERIE')[1])
+
+		//Instancia a conexão com o WebService do TSS
+		oWebServ:= WSNFeSBRA():New()
+		oWebServ:cUSERTOKEN        := "TOTVS"
+		oWebServ:cID_ENT           := cIdEnt
+		oWebServ:oWSNFEID          := NFESBRA_NFES2():New()
+		oWebServ:oWSNFEID:oWSNotas := NFESBRA_ARRAYOFNFESID2():New()
+		aAdd(oWebServ:oWSNFEID:oWSNotas:oWSNFESID2,NFESBRA_NFESID2():New())
+		aTail(oWebServ:oWSNFEID:oWSNotas:oWSNFESID2):cID := (cSerie+cDocumento)
+		oWebServ:nDIASPARAEXCLUSAO := 0
+		oWebServ:_URL              := AllTrim(cURLTss)+"/NFeSBRA.apw"
+
+		//Se tiver notas
+		If oWebServ:RetornaNotas()
+
+			//Se tiver dados
+			If Len(oWebServ:oWsRetornaNotasResult:OWSNOTAS:oWSNFES3) > 0
+
+				//Se tiver sido cancelada
+				If oWebServ:oWsRetornaNotasResult:OWSNOTAS:oWSNFES3[1]:oWSNFECANCELADA != Nil
+					cTextoXML := oWebServ:oWsRetornaNotasResult:OWSNOTAS:oWSNFES3[1]:oWSNFECANCELADA:cXML
+
+					//Senão, pega o xml normal
+				Else
+					cTextoXML := oWebServ:oWsRetornaNotasResult:OWSNOTAS:oWSNFES3[1]:oWSNFE:cXML
+					cProt := oWebServ:oWsRetornaNotasResult:OWSNOTAS:oWSNFES3[1]:oWSNFE:cXMLPROT
+				EndIf
+
+				//Gera o arquivo
+				// MemoWrite(cArqXML, cTextoXML)
+				Return NormXML(cTextoXML, cProt)
+
+				//Se for para mostrar, será mostrado um aviso com o conteúdo
+				If lMostra
+					Aviso("zSpedXML", cTextoXML, {"Ok"}, 3)
+				EndIf
+
+				//Caso não encontre as notas, mostra mensagem
+			Else
+				ConOut("zSpedXML > Verificar parâmetros, documento e série não encontrados ("+cDocumento+"/"+cSerie+")...")
+
+				If lMostra
+					Aviso("zSpedXML", "Verificar parâmetros, documento e série não encontrados ("+cDocumento+"/"+cSerie+")...", {"Ok"}, 3)
+				EndIf
+			EndIf
+
+			//Senão, houve erros na classe
+		Else
+			ConOut("zSpedXML > "+IIf(Empty(GetWscError(3)), GetWscError(1), GetWscError(3))+"...")
+
+			If lMostra
+				Aviso("zSpedXML", IIf(Empty(GetWscError(3)), GetWscError(1), GetWscError(3)), {"Ok"}, 3)
+			EndIf
+		EndIf
+	EndIf
+	RestArea(aArea)
+Return Nil
+
+Static Function NormXML(cSig, cProt)
+	Local cXML, cSig, cProt
+
+	cSig := STRTRAN(cSig, '<?xml version="1.0" encoding="UTF-8"?>', '')
+	cSig := STRTRAN(cSig, 'xmlns="http://www.portalfiscal.inf.br/nfe"', '')
+
+	cProt := STRTRAN(cProt, '<?xml version="1.0" encoding="UTF-8"?>', '')
+	cProt := STRTRAN(cProt, 'xmlns="http://www.portalfiscal.inf.br/nfe"', '')
+
+	cXML := '<?xml version="1.0" encoding="UTF-8"?>'+;
+		'<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">'+;
+		cSig+;
+		cProt+;
+		'</nfeProc>'
+Return cXML
