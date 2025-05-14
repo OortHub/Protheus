@@ -200,8 +200,8 @@ Static Function CreateOrder(oData)
 			{'C6_ITEM', StrZero(n, 2), Nil },;
 			{'C6_PRODUTO', oItem['sku'], Nil },;
 			{'C6_QTDVEN', oItem['quantity'], Nil },;
-			{'C6_PRCVEN', oItem['basePrice'], Nil },;
-			{'C6_VALOR', oItem['quantity'] * oItem['basePrice'], Nil },;
+			{'C6_PRCVEN', oItem['price'], Nil },;
+			{'C6_VALOR', oItem['quantity'] * oItem['price'], Nil },;
 			{'C6_TES', cTes, Nil },;
 			{'C6_LOCAL', '01', Nil }; // Alterar para o local esperado
 		})
