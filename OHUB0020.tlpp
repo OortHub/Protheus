@@ -1,0 +1,36 @@
+#Include "protheus.ch"
+#Include 'tlpp-object.th'
+#Include 'tlpp-core.th'
+
+/*/{Protheus.doc} OHUB0020
+Função Responsável por gerar a etiqueta de um pedido no OortHub.
+@type  Function
+@author Lucas Fidélis
+@since 01/04/2025
+/*/
+User Function OHUB0020(cOrderId, lZPL)
+	Default lZPL := .F.
+	Local cTemp := IIF(GetRemoteType() == 2, "I:/", "") + GetTempPath(.T.)
+	Local nHandle
+	Local cExtensao := IIF(lZPL, "txt", "pdf")
+	Local cFile := cTemp + StrTran(DToS(Date()) + "_" + Time() + "_label.", ":", "") + cExtensao
+
+	Local cApiHost := 'https://api.oorthub.com.br'
+	Local cXAuth := AllTrim(SuperGetMV('MV_OORTKEY'))
+	Local oOort := OortHubClient():New(cApiHost, cXAuth)
+
+	Try
+		cResult  := oOort:GetLabel(cOrderId, lZPL)
+		nHandle := FCreate(cFile)
+		FWrite(nHandle, cResult)
+		FClose(nHandle)
+	Catch oError
+		cFile := Nil
+		If IsBlind()
+			ConOut(oError:description)
+		Else
+			FWAlertError(oError:description, "Etiqueta OortHub")
+		EndIf
+	EndTry
+
+Return cFile
