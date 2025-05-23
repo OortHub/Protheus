@@ -8,6 +8,7 @@ Class OortHubClient
 	public Method GetOrder(cId) as Object
 	Public Method SetExternalId(cOrderId, cExternalId) as Object
 	Public Method InvoiceOrder(cOrderId, cXML) as Object
+	Public Method GetLabel(cOrderId, lZPL) as Object
 	Private Method Post(cPath, cPostData, aHeadOut) as Object
 	Private Method Get(cPath, aHeadOut) as Object
 	Private Method RestPut(cPath, cPostData, aHeadOut) as Object
@@ -33,6 +34,12 @@ Method InvoiceOrder(cOrderId, cXML) Class OortHubClient
 	Local aHeadOut := {}
 	AAdd(aHeadOut, "Content-Type: application/xml; charset=UTF-8")
 Return ::Post(cPath, cXML, aHeadOut)
+
+Method GetLabel(cOrderId, lZPL) Class OortHubClient
+	Default lZPL := .F.
+	Local cLabelType := IIF(lZPL, 'zpl', 'pdf')
+	Local cPath := '/orders/' + cOrderId + '/label?type=' + cLabelType
+Return ::Get(cPath, Nil, .T.)
 
 Method Post(cPath, cPostData, aHeadOut) Class OortHubClient
 	Default aHeadOut := {}
@@ -67,8 +74,9 @@ Method Post(cPath, cPostData, aHeadOut) Class OortHubClient
 	EndIf
 Return oResponse
 
-Method Get(cPath, aHeadOut) Class OortHubClient
+Method Get(cPath, aHeadOut, lPlain) Class OortHubClient
 	Default aHeadOut := {}
+	Default lPlain := .F.
 	Local oRest, cError, nStatus, cResponse, oResponse
 	Local varError := ErrorClass():New()
 
@@ -84,6 +92,9 @@ Method Get(cPath, aHeadOut) Class OortHubClient
 		cError := ""
 		nStatus := HTTPGetStatus(@cError)
 		cResponse := oRest:getResult()
+		If lPlain .And. nStatus == 200
+			Return cResponse
+		EndIf
 		cResponse := DecodeUtf8(cResponse)
 		oResponse := JsonObject():New()
 		oResponse:FromJson(cResponse)
