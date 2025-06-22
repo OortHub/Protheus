@@ -9,6 +9,7 @@ Class OortHubClient
 	Public Method SetExternalId(cOrderId, cExternalId) as Object
 	Public Method InvoiceOrder(cOrderId, cXML) as Object
 	Public Method GetLabel(cOrderId, lZPL) as Object
+	Public Method BulkProducts(cPayload) as Object
 	Private Method Post(cPath, cPostData, aHeadOut) as Object
 	Private Method Get(cPath, aHeadOut) as Object
 	Private Method RestPut(cPath, cPostData, aHeadOut) as Object
@@ -40,6 +41,12 @@ Method GetLabel(cOrderId, lZPL) Class OortHubClient
 	Local cLabelType := IIF(lZPL, 'zpl', 'pdf')
 	Local cPath := '/orders/' + cOrderId + '/label?type=' + cLabelType
 Return ::Get(cPath, Nil, .T.)
+
+Method BulkProducts(cPayload) Class OortHubClient
+	Local cPath := '/bulk/products'
+	Local aHeadOut := {}
+	AAdd(aHeadOut, "Content-Type: application/json; charset=UTF-8")
+Return ::Post(cPath, cPayload, aHeadOut)
 
 Method Post(cPath, cPostData, aHeadOut) Class OortHubClient
 	Default aHeadOut := {}

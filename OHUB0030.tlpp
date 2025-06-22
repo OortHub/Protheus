@@ -1,0 +1,87 @@
+#Include "protheus.ch"
+#Include 'tlpp-object.th'
+#Include 'tlpp-core.th'
+
+/*/{Protheus.doc} OHUB0030
+Função responsável por atualizar o estoque e preço no OortHub de forma massiva.
+@type  Function
+@author Lucas Fidélis
+@since 22/06/2025
+/*/
+User Function OHUB0030()
+
+  Local aAliasSB1 := GetNextAlias()
+  Local oProduct, aProducts := {}, oBody := JsonObject():New()
+  Local cApiHost := 'https://api.oorthub.com.br'
+	Local cXAuth := AllTrim(SuperGetMV('MV_OORTKEY'))
+	Local oOort := OortHubClient():New(cApiHost, cXAuth)
+
+  BeginSql Alias aAliasSB1
+    SELECT
+      SB1.B1_COD,
+      SB0.B0_PRV1 AS B0_PRV,
+      SUM(SB2.B2_QATU) AS B2_QATU,
+      ISNULL(CAST(SG1.G1_COD AS BIT), 0) AS HAS_SG1
+    FROM %table:SB1% SB1
+      INNER JOIN %table:SB0% SB0
+        ON SB0.B0_COD = SB1.B1_COD
+        AND SB0.B0_FILIAL = '11'
+        AND SB0.D_E_L_E_T_ <> '*'
+      LEFT OUTER JOIN %table:SB2% SB2
+        ON SB2.B2_COD = SB1.B1_COD
+        AND SB2.D_E_L_E_T_ <> '*'
+        AND SB2.B2_FILIAL IN ('01', '11')
+        AND SB2.B2_LOCAL IN ( '01', '20')
+      LEFT OUTER JOIN %table:SG1% SG1
+        ON SG1.G1_FILIAL = SB1.B1_FILIAL
+        AND SG1.G1_COD = SB1.B1_COD
+        AND SG1.D_E_L_E_T_ <> '*'
+    WHERE SB1.D_E_L_E_T_ <> '*'
+      AND SB1.B1_FILIAL = %xfilial:SB1%
+    GROUP BY SB1.B1_COD,
+      SB0.B0_PRV1,
+      SG1.G1_COD
+  EndSql
+
+  While !(aAliasSB1)->(EoF())
+    oProduct := JsonObject():New()
+    oProduct['sku'] := AllTrim((aAliasSB1)->(B1_COD))
+    oProduct['basePrice'] := (aAliasSB1)->(B0_PRV)
+    oProduct['stock'] := (aAliasSB1)->(B2_QATU)
+    If (aAliasSB1)->(HAS_SG1) == 1
+      oProduct['stock'] += GetQtySG1((aAliasSB1)->(B1_COD))
+    EndIf
+    AAdd(aProducts, oProduct)
+    FreeObj(oProduct)
+    (aAliasSB1)->(DbSkip())
+  EndDo
+
+  oBody['data'] := aProducts
+  oOort:BulkProducts(oBody:toJson())
+
+Return .T.
+
+Static Function GetQtySG1(cSKU)
+  Local nQty := 0
+  Local aAliasSG1 := GetNextAlias()
+
+  BeginSql Alias aAliasSG1    
+    SELECT SG1.G1_COD, 
+      IIF(MIN(ISNULL(SB2.B2_QATU, 0)/G1_QUANT) < 0, 0, MIN(ISNULL(SB2.B2_QATU, 0)/G1_QUANT)) AS G1_QUANT
+    FROM %table:SG1% SG1
+      LEFT OUTER JOIN %table:SB2% SB2
+        ON SB2.B2_COD = SG1.G1_COMP
+        AND SB2.B2_FILIAL IN ('01', '11')
+        AND SB2.B2_LOCAL IN ( '01', '20')
+    WHERE SG1.D_E_L_E_T_ <> '*'
+      AND SG1.G1_COD = %exp:cSKU%
+      AND SG1.G1_FILIAL = %xfilial:SB1%
+    GROUP BY G1_COD
+  EndSql
+
+  If !(aAliasSG1)->(EoF())
+    nQty := (aAliasSG1)->(G1_QUANT)
+  EndIf
+
+  (aAliasSG1)->(DbCloseArea())
+Return nQty
