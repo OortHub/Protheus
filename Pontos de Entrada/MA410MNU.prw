@@ -27,6 +27,6 @@ Static Function OpenChrome(cFile)
 	If GetRemoteType() == 2 //LINUX|MAC
 		WaitRun("google-chrome " + cFile, 1)
 	Else //WINDOWS
-		ShellExecute("open", cFile, "start chrome ", GetTempPath(), 1)
+		ShellExecute("Open", "file:///" + cFile,"", "", 1)
 	EndIf
 Return
