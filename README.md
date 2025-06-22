@@ -13,4 +13,5 @@
 | OHUB0010.tlpp        | Fonte responsável por realizar o envio do xml do Protheus para o OortHub.                                                                                                         |
 | SPDNFDANF.prw        | PE antes do monitoramento da NF-e responsável por executar a função OHUB0010                                                                                                      |
 | OHUB0020.tlpp        | Fonte responsável por solicitar as etiquetas para o OortHub Client e realizar o download para o disco local do usuário                                                            |
+| OHUB0030.tlpp        | Função responsável por atualizar o estoque e preço no OortHub de forma massiva através de Schedule. |
 | MA410MNU.prw         | PE possível para realizar a impressão das etiquetas                                                                                                                               |
