@@ -66,6 +66,7 @@ Static Function CreateCustomer(oData)
 	Local varError := ErrorClass():New()
 
 	Local cDocument := oData['billingInfo']['document']
+	Local cIE := IIf(Empty(oData['billingInfo']['stateRegistration']), 'ISENTO', oData['billingInfo']['stateRegistration'])
 	Local cNome := oData['shippingInfo']['firstName'] + ' ' + oData['shippingInfo']['lastName']
 	Local cAddress := oData['shippingInfo']['address']['streetName'] + ', ' + oData['shippingInfo']['address']['streetNumber']
 	Local cUF := GetUf(oData['shippingInfo']['address']['state'])
@@ -86,7 +87,7 @@ Static Function CreateCustomer(oData)
 		{'A1_NREDUZ', cNome},;
 		{'A1_PESSOA', cPessoa},;
 		{'A1_CGC', cDocument},;
-		{'A1_INSCR', 'ISENTO'},;
+		{'A1_INSCR', cIE},;
 		{'A1_PAIS', '105'},;
 		{'A1_CODPAIS', '01058'},;
 		{'A1_CONTRIB', '2'},;
