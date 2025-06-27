@@ -162,7 +162,7 @@ Static Function GetCodMunByZipCode(cZipCode)
 	cContent := Httpget(cUrl)
 	nStatus := HttpGetStatus(@cHttpStatus)
 
-	If nStatus != 200
+	If nStatus != 200 .Or. "erro" $ cContent
 		cUrl := "https://opencep.com/v1/" + AllTrim(cZipCode)
 		cContent := Httpget(cUrl)
 	EndIf
