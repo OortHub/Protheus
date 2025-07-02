@@ -47,6 +47,7 @@ User Function OHUB0001(oNoti)
 	If nRecOrder > 0
 		DbSelectArea('SC5')
 		SC5->(DbGoTo(nRecOrder))
+		UpdateOrder(oData)
 		oOort:SetExternalId(oData['id'], SC5->C5_FILIAL + SC5->C5_NUM)
 		SC5->(DbCloseArea())
 	EndIf
@@ -318,3 +319,26 @@ Static Function GetUf(cState)
 	oStates['Sergipe'] := 'SE'
 	oStates['Tocantins'] := 'TO'
 Return oStates[cState]
+
+Static Function GetShippingCost(oData)
+	Local nCost := IIF(ValType(oData['shipment']) == 'J', oData['shipment']['costs']['baseCost'], 0)
+Return nCost
+
+Static Function GetItemTaxes(oData)
+	Local nTax := 0
+	Local n
+
+	For n:=1 To Len(oData['items'])
+		oItem := oData['items'][n]
+		nTax += oItem['quantity'] * oItem['tax']
+	Next
+Return nTax
+
+Static Function UpdateOrder(oData)
+	Local nShippingCost := GetShippingCost(oData)
+	Local nItemTaxes := GetItemTaxes(oData)
+	RecLock("SC5", .F.)
+		SC5->C5_XMLENVIO := nShippingCost
+		SC5->C5_XMLTAX := nItemTaxes
+	SC5->(MsUnlock())
+Return Nil
